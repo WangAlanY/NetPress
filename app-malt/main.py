@@ -13,7 +13,7 @@ from malt_env import BenchmarkEvaluator
 import argparse
 from scipy import stats
 import math
-
+    
 # Define a configuration for the benchmark
 def parse_args():
     parser = argparse.ArgumentParser(description="Benchmark Configuration")
@@ -21,8 +21,11 @@ def parse_args():
                                                                                                                       'GoogleGeminiAgent',     
                                                                                                                       'Qwen2.5-72B-Instruct', 
                                                                                                                       'QwenModel_finetuned', 
-                                                                                                                      'ReAct_Agent'])
+                                                                                                                      'ReAct_Agent',
+                                                                                                                      'Llama3_1B', 
+                                                                                                                      'OpenSource'])
     parser.add_argument('--model_path', type=str, default=None, help='Path to the model (for local models/finetunes).')
+    parser.add_argument('--model_name', type=str, default=None, help='Hugging Face id for local model (for local models/finetunes).')
     parser.add_argument('--prompt_type', type=str, default='base', help='Choose the prompt type', choices=['base', 'cot', 'few_shot_basic', 'few_shot_semantic', 'few_shot_knn'])
     parser.add_argument('--num_queries', type=int, default=10, help='Number of queries to generate for each type')
     parser.add_argument('--complexity_level', nargs='+', default=['level1', 'level2'], help='Complexity level of queries to generate')

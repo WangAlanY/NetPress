@@ -18,7 +18,7 @@ import re
 import time
 import sys
 import numpy as np
-from llm_model import AzureGPT4Agent, GoogleGeminiAgent, QwenModel, QwenModel_finetuned, ReAct_Agent
+from llm_model import *
 from error_check import SafetyChecker
 
 
@@ -28,7 +28,8 @@ OUTPUT_JSONL_FILE = 'gpt4.jsonl'
 
 
 class BenchmarkEvaluator:
-    def __init__(self, graph_data, llm_model_type, prompt_type, model_path=None):
+    def __init__(self, graph_data, llm_model_type, prompt_type, model_name=None, 
+                 model_path=None):
         self.graph_data = graph_data
         # Call the output code from LLM agents file
         if llm_model_type == "AzureGPT4Agent":
@@ -41,6 +42,10 @@ class BenchmarkEvaluator:
             self.llm_agent = QwenModel_finetuned(prompt_type, model_path=model_path)
         elif llm_model_type == "ReAct_Agent":
             self.llm_agent = ReAct_Agent(prompt_type='base')
+        elif llm_model_type == "Llama3_1B":
+            self.llm_agent = Llama3_1B(prompt_type='base', model_path="voidful/Llama-3.2-8B-Instruct")
+        else: 
+            self.llm_agent = OpenSource(model_path=model_path, model_name=model_name)
 
     def userQuery(self, current_query, golden_answer):
         # for each prompt in the prompt_list, append it as the value of {'query': prompt}

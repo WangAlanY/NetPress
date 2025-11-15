@@ -26,7 +26,6 @@ from vllm import LLM, SamplingParams
 from prompt_agent import BasePromptAgent, ZeroShot_CoT_PromptAgent, FewShot_Basic_PromptAgent, FewShot_Semantic_PromptAgent, ReAct_PromptAgent
 import torch.multiprocessing as mp
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from prompter import PromptAgent 
 
 # Load environ variables from .env, will not override existing environ variables
 load_dotenv()
@@ -63,16 +62,53 @@ class GoogleGeminiAgent:
             timeout=None,
             max_retries=2,
         )
+        self.prompt_type = prompt_type
         
-        self.prompter = PromptAgent(prompt_type)
+        self.prompt_type = prompt_type
+        # Store prompt agent for later use
+        if self.prompt_type == "cot":
+            self.prompt_agent = ZeroShot_CoT_PromptAgent()
+        elif self.prompt_type == "few_shot_basic":
+            self.prompt_agent = FewShot_Basic_PromptAgent()
+        elif self.prompt_type == "few_shot_semantic":
+            self.prompt_agent = FewShot_Semantic_PromptAgent()
+        else:
+            self.prompt_agent = BasePromptAgent()
         
     def call_agent(self, query):
-        print("Calling Google Gemini with prompt type:", self.prompter.prompt_type)
-        prompt = self.prompter.get_prompt(query)  
-        
+        print("Calling Google Gemini with prompt type:", self.prompt_type)
+
+        # Create prompt based on type
+        if self.prompt_type == "few_shot_semantic":
+            prompt = self.prompt_agent.get_few_shot_prompt(query)
+        elif self.prompt_type in ["few_shot_basic"]:
+            prompt = self.prompt_agent.get_few_shot_prompt()
+        else:
+            prompt = PromptTemplate(
+                input_variables=["input"],
+                template=self.prompt_agent.prompt_prefix + prompt_suffix
+            )
+
+        # Print prompt template
+        print("\nPrompt Template:")
+        print("-" * 80)
+        if isinstance(prompt, FewShotPromptTemplate):
+            print("Few Shot Prompt Template Configuration:")
+            print("\nInput Variables:", prompt.input_variables)
+            print("\nExamples:")
+            for i, example in enumerate(prompt.examples, 1):
+                print(f"\nExample {i}:")
+                print(f"Question: {example['question']}")
+                print(f"Answer: {example['answer']}")
+            print("\nExample Prompt Template:", prompt.example_prompt)
+            print("\nPrefix:", prompt.prefix)
+            print("\nSuffix:", prompt.suffix)
+        else:
+            print(prompt.template.strip())
+        print("-" * 80 + "\n")
+
         chain = LLMChain(llm=self.llm, prompt=prompt)
         answer = chain.run(query)
-        
         print("model returned")
         code = clean_up_llm_output_func(answer)
         return code
@@ -87,7 +123,16 @@ class AzureGPT4Agent:
             temperature=0.0,
             max_tokens=4000,
         )
-        self.prompter = PromptAgent(prompt_type)
+        self.prompt_type = prompt_type
+        # Store prompt agent for later use
+        if self.prompt_type == "cot":
+            self.prompt_agent = ZeroShot_CoT_PromptAgent()
+        elif self.prompt_type == "few_shot_basic":
+            self.prompt_agent = FewShot_Basic_PromptAgent()
+        elif self.prompt_type == "few_shot_semantic":
+            self.prompt_agent = FewShot_Semantic_PromptAgent()
+        else:
+            self.prompt_agent = BasePromptAgent()
 
     @staticmethod
     def configure_environment_variables():
@@ -116,7 +161,34 @@ class AzureGPT4Agent:
     def call_agent(self, query):
         print("Calling GPT-4o with prompt type:", self.prompt_type)
         
-        prompt = self.prompter.get_prompt(query) 
+        # Create prompt based on type
+        if self.prompt_type == "few_shot_semantic":
+            prompt = self.prompt_agent.get_few_shot_prompt(query)
+        elif self.prompt_type in ["few_shot_basic"]:
+            prompt = self.prompt_agent.get_few_shot_prompt()
+        else:
+            prompt = PromptTemplate(
+                input_variables=["input"],
+                template=self.prompt_agent.prompt_prefix + prompt_suffix
+            )
+
+        # Print prompt template
+        print("\nPrompt Template:")
+        print("-" * 80)
+        if isinstance(prompt, FewShotPromptTemplate):
+            print("Few Shot Prompt Template Configuration:")
+            print("\nInput Variables:", prompt.input_variables)
+            print("\nExamples:")
+            for i, example in enumerate(prompt.examples, 1):
+                print(f"\nExample {i}:")
+                print(f"Question: {example['question']}")
+                print(f"Answer: {example['answer']}")
+            print("\nExample Prompt Template:", prompt.example_prompt)
+            print("\nPrefix:", prompt.prefix)
+            print("\nSuffix:", prompt.suffix)
+        else:
+            print(prompt.template.strip())
+        print("-" * 80 + "\n")
 
         chain = LLMChain(llm=self.llm, prompt=prompt)
         answer = chain.run(query)
@@ -146,12 +218,55 @@ class OpenSource:
         # Use the default generation config from the model
         self.llm.generation_config = self.llm.generation_config
         
-        self.prompter = PromptAgent(prompt_type, True)
+        self.prompt_type = prompt_type
+        # Store prompt agent for later use
+        if self.prompt_type == "cot":
+            self.prompt_agent = ZeroShot_CoT_PromptAgent()
+        elif self.prompt_type == "few_shot_basic":
+            self.prompt_agent = FewShot_Basic_PromptAgent()
+        elif self.prompt_type == "few_shot_semantic":
+            self.prompt_agent = FewShot_Semantic_PromptAgent()
+        else:
+            self.prompt_agent = BasePromptAgent()
 
     def call_agent(self, query):
-        print(f"Calling {self.model_name} with prompt type:", self.prompter.prompt_type)
+        print(f"Calling {self.model_name} with prompt type:", self.prompt_type)
         
-        prompt_text = self.prompter.get_prompt(query) 
+        # Create prompt based on type
+        if self.prompt_type == "few_shot_semantic":
+            prompt_template = self.prompt_agent.get_few_shot_prompt(query)
+            # For few-shot semantic, we need to format with the specific query
+            prompt_text = prompt_template.format(input=query)
+        elif self.prompt_type == "few_shot_basic":
+            prompt_template = self.prompt_agent.get_few_shot_prompt()
+            # For few-shot basic, format with the query
+            prompt_text = prompt_template.format(input=query)
+        else:
+            # For base/cot prompts
+            prompt_template = PromptTemplate(
+                input_variables=["input"],
+                template=self.prompt_agent.prompt_prefix + prompt_suffix
+            )
+            prompt_text = self.prompt_agent.prompt_prefix + prompt_suffix
+            prompt_text = prompt_text.format(input=query)
+
+        # Print prompt template (keeping the same debugging output)
+        print("\nPrompt Template:")
+        print("-" * 80)
+        if isinstance(prompt_template, FewShotPromptTemplate):
+            print("Few Shot Prompt Template Configuration:")
+            print("\nInput Variables:", prompt_template.input_variables)
+            print("\nExamples:")
+            for i, example in enumerate(prompt_template.examples, 1):
+                print(f"\nExample {i}:")
+                print(f"Question: {example['question']}")
+                print(f"Answer: {example['answer']}")
+            print("\nExample Prompt Template:", prompt_template.example_prompt)
+            print("\nPrefix:", prompt_template.prefix)
+            print("\nSuffix:", prompt_template.suffix)
+        else:
+            print(prompt_text.strip())
+        print("-" * 80 + "\n")
 
         # Explicitly create the attention mask to handle the warning
         # Use the modelscope chat method with attention mask handling
@@ -190,14 +305,57 @@ class QwenModel:
             temperature=0.0,
             max_tokens=512
         )
-        
-        self.prompter = PromptAgent(prompt_type, True)
+
+        self.prompt_type = prompt_type
+        # Store prompt agent for later use
+        if self.prompt_type == "cot":
+            self.prompt_agent = ZeroShot_CoT_PromptAgent()
+        elif self.prompt_type == "few_shot_basic":
+            self.prompt_agent = FewShot_Basic_PromptAgent()
+        elif self.prompt_type == "few_shot_semantic":
+            self.prompt_agent = FewShot_Semantic_PromptAgent()
+        else:
+            self.prompt_agent = BasePromptAgent()
 
     def call_agent(self, query):
         print("Calling Qwen with prompt type:", self.prompt_type)
         
-        prompt_text = self.prompter.get_prompt(query) 
-        
+        # Create prompt based on type
+        if self.prompt_type == "few_shot_semantic":
+            prompt_template = self.prompt_agent.get_few_shot_prompt(query)
+            # For few-shot semantic, we need to format with the specific query
+            prompt_text = prompt_template.format(input=query)
+        elif self.prompt_type == "few_shot_basic":
+            prompt_template = self.prompt_agent.get_few_shot_prompt()
+            # For few-shot basic, format with the query
+            prompt_text = prompt_template.format(input=query)
+        else:
+            # For base/cot prompts
+            prompt_template = PromptTemplate(
+                input_variables=["input"],
+                template=self.prompt_agent.prompt_prefix + prompt_suffix
+            )
+            prompt_text = self.prompt_agent.prompt_prefix + prompt_suffix
+            prompt_text = prompt_text.format(input=query)
+
+        # Print prompt template (keeping the same debugging output)
+        print("\nPrompt Template:")
+        print("-" * 80)
+        if isinstance(prompt_template, FewShotPromptTemplate):
+            print("Few Shot Prompt Template Configuration:")
+            print("\nInput Variables:", prompt_template.input_variables)
+            print("\nExamples:")
+            for i, example in enumerate(prompt_template.examples, 1):
+                print(f"\nExample {i}:")
+                print(f"Question: {example['question']}")
+                print(f"Answer: {example['answer']}")
+            print("\nExample Prompt Template:", prompt_template.example_prompt)
+            print("\nPrefix:", prompt_template.prefix)
+            print("\nSuffix:", prompt_template.suffix)
+        else:
+            print(prompt_text.strip())
+        print("-" * 80 + "\n")
+
         # Use vLLM's native interface for generation
         outputs = self.llm.generate(prompt_text, self.sampling_params)
         answer = outputs[0].outputs[0].text
@@ -226,12 +384,55 @@ class QwenModel_finetuned:
         # Use the default generation config from the model
         self.llm.generation_config = self.llm.generation_config
         
-        self.prompter = PromptAgent(prompt_type, True)
+        self.prompt_type = prompt_type
+        # Store prompt agent for later use
+        if self.prompt_type == "cot":
+            self.prompt_agent = ZeroShot_CoT_PromptAgent()
+        elif self.prompt_type == "few_shot_basic":
+            self.prompt_agent = FewShot_Basic_PromptAgent()
+        elif self.prompt_type == "few_shot_semantic":
+            self.prompt_agent = FewShot_Semantic_PromptAgent()
+        else:
+            self.prompt_agent = BasePromptAgent()
 
     def call_agent(self, query):
         print("Calling Fine-tuned Qwen with prompt type:", self.prompt_type)
         
-        prompt_text = self.prompter.get_prompt(query)
+        # Create prompt based on type
+        if self.prompt_type == "few_shot_semantic":
+            prompt_template = self.prompt_agent.get_few_shot_prompt(query)
+            # For few-shot semantic, we need to format with the specific query
+            prompt_text = prompt_template.format(input=query)
+        elif self.prompt_type == "few_shot_basic":
+            prompt_template = self.prompt_agent.get_few_shot_prompt()
+            # For few-shot basic, format with the query
+            prompt_text = prompt_template.format(input=query)
+        else:
+            # For base/cot prompts
+            prompt_template = PromptTemplate(
+                input_variables=["input"],
+                template=self.prompt_agent.prompt_prefix + prompt_suffix
+            )
+            prompt_text = self.prompt_agent.prompt_prefix + prompt_suffix
+            prompt_text = prompt_text.format(input=query)
+
+        # Print prompt template (keeping the same debugging output)
+        print("\nPrompt Template:")
+        print("-" * 80)
+        if isinstance(prompt_template, FewShotPromptTemplate):
+            print("Few Shot Prompt Template Configuration:")
+            print("\nInput Variables:", prompt_template.input_variables)
+            print("\nExamples:")
+            for i, example in enumerate(prompt_template.examples, 1):
+                print(f"\nExample {i}:")
+                print(f"Question: {example['question']}")
+                print(f"Answer: {example['answer']}")
+            print("\nExample Prompt Template:", prompt_template.example_prompt)
+            print("\nPrefix:", prompt_template.prefix)
+            print("\nSuffix:", prompt_template.suffix)
+        else:
+            print(prompt_text.strip())
+        print("-" * 80 + "\n")
 
         # Explicitly create the attention mask to handle the warning
         # Use the modelscope chat method with attention mask handling
@@ -367,11 +568,14 @@ class Llama3_1B:
         # Use the default generation config from the model
         self.llm.generation_config = self.llm.generation_config
         
-        self.prompter = PromptAgent(prompt_type, True)
+        self.prompt_type = prompt_type
+        # Store prompt agent for later use
+        self.prompter = self.PromptAgent
 
     def call_agent(self, query):
         print("Calling Llama-3.2-1B with prompt type:", self.prompt_type)
-        prompt_text = self.prompter.get_prompt(query)
+        
+        
 
         # Explicitly create the attention mask to handle the warning
         # Use the modelscope chat method with attention mask handling
@@ -418,12 +622,56 @@ class DeepSeekModel:
     # Use the default generation config from the model
     self.llm.generation_config = self.llm.generation_config
    
-    self.prompter = PromptAgent(prompt_type, True)
+    self.prompt_type = prompt_type
+    # Store prompt agent for later use
+    if self.prompt_type == "cot":
+      self.prompt_agent = ZeroShot_CoT_PromptAgent()
+    elif self.prompt_type == "few_shot_basic":
+      self.prompt_agent = FewShot_Basic_PromptAgent()
+    elif self.prompt_type == "few_shot_semantic":
+      self.prompt_agent = FewShot_Semantic_PromptAgent()
+    else:
+      self.prompt_agent = BasePromptAgent()
 
   def call_agent(self, query):
     print("Calling Fine-tuned Qwen with prompt type:", self.prompt_type)
-    
-    prompt_text = self.prompter.get_prompt(query) 
+   
+    # Create prompt based on type
+    if self.prompt_type == "few_shot_semantic":
+      prompt_template = self.prompt_agent.get_few_shot_prompt(query)
+      # For few-shot semantic, we need to format with the specific query
+      prompt_text = prompt_template.format(input=query)
+    elif self.prompt_type == "few_shot_basic":
+      prompt_template = self.prompt_agent.get_few_shot_prompt()
+      # For few-shot basic, format with the query
+      prompt_text = prompt_template.format(input=query)
+    else:
+      # For base/cot prompts
+      prompt_template = PromptTemplate(
+        input_variables=["input"],
+        template=self.prompt_agent.prompt_prefix + prompt_suffix
+      )
+      prompt_text = self.prompt_agent.prompt_prefix + prompt_suffix
+      prompt_text = prompt_text.format(input=query)
+
+    # Print prompt template (keeping the same debugging output)
+    print("\nPrompt Template:")
+    print("-" * 80)
+    if isinstance(prompt_template, FewShotPromptTemplate):
+      print("Few Shot Prompt Template Configuration:")
+      print("\nInput Variables:", prompt_template.input_variables)
+      print("\nExamples:")
+      for i, example in enumerate(prompt_template.examples, 1):
+        print(f"\nExample {i}:")
+        print(f"Question: {example['question']}")
+        print(f"Answer: {example['answer']}")
+      print("\nExample Prompt Template:", prompt_template.example_prompt)
+      print("\nPrefix:", prompt_template.prefix)
+      print("\nSuffix:", prompt_template.suffix)
+    else:
+      print(prompt_text.strip())
+    print("-" * 80 + "\n")
+
     # Explicitly create the attention mask to handle the warning
     # Use the modelscope chat method with attention mask handling
     try:

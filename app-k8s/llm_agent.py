@@ -10,7 +10,6 @@ os.environ["LANGCHAIN_TRACING_V2"] = "false"
 import warnings
 from langchain._api import LangChainDeprecationWarning
 warnings.simplefilter("ignore", category=LangChainDeprecationWarning)
-from transformers import BitsAndBytesConfig
 import torch
 from huggingface_hub import login
 from prompt_agent import BasePromptAgent, ZeroShot_CoT_PromptAgent, FewShot_Basic_PromptAgent, ReAct_PromptAgent
@@ -25,6 +24,9 @@ from langchain import hub
 from langchain.agents import Tool, AgentExecutor, create_react_agent
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
+
+# pip install accelerate
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
 def extract_command(text: str) -> str:
     """
@@ -50,9 +52,9 @@ class LLMAgent:
             self.llm_agent = AzureGPT4Agent(prompt_type=prompt_type)
         if llm_agent_type == "ReAct_Agent":
             self.llm_agent = ReAct_Agent(prompt_type=prompt_type)
-        if llm_agent_type == "YourModel":
+        if llm_agent_type == "Gemma":
             # ====== TODO: Replace with your own model initialization if needed ======
-            self.llm_agent = YourModel(prompt_type=prompt_type, num_gpus=num_gpus)
+            self.llm_agent = Gemma(prompt_type=prompt_type, num_gpus=num_gpus)
             # ====== END TODO ======
 
 class AzureGPT4Agent:
@@ -318,13 +320,19 @@ class ReAct_Agent:
         print("model returned")
         return answer
 
-class YourModel:
+class Gemma:
     def __init__(self, prompt_type="base", num_gpus=1):
         self.prompt_type = prompt_type
 
         # ====== TODO: Implement your own model initialization here ======
         # Example: load your model, tokenizer, and set up any required parameters
         # ====== END TODO ======
+        
+        quantization_config = BitsAndBytesConfig(load_in_4bit=True)
+
+        self.tokenizer = AutoTokenizer.from_pretrained("google/gemma-7b")
+        self.model = AutoModelForCausalLM.from_pretrained(
+            "google/gemma-7b", quantization_config=quantization_config)
 
         if prompt_type == "base":
             self.prompt_agent = BasePromptAgent()
@@ -365,7 +373,11 @@ class YourModel:
         # ====== TODO: Implement your own inference logic here ======
         # Example: read input, generate prompt, call your model, and return the result
         # ====== END TODO ======
-
+        
+        input_ids = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+        outputs = self.model.generate(**input_ids)
+        
+        answer = self.tokenizer.decode(outputs[0])
         print("llm answer:", answer)
         print("model returned")
         answer = extract_command(answer)
