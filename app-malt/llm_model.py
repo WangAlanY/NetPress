@@ -129,22 +129,18 @@ class OpenSource:
     def __init__(self, model_name, prompt_type="base", model_path=None):
         self.model_name = model_name
         self.model_path = model_path
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path, 
-            trust_remote_code=True
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        self.llm = LLM(
+            model=self.model_name,
+            device=self.device,
+            quantization="gptq"
         )
-        # Set padding token to be same as EOS token, but with explicit attention mask handling
-        self.tokenizer.pad_token = self.tokenizer.eos_token
         
-        self.llm = AutoModelForCausalLM.from_pretrained(
-            self.model_path, 
-            device_map="auto", 
-            trust_remote_code=True, 
-            fp16=True
-        ).eval()
-        
-        # Use the default generation config from the model
-        self.llm.generation_config = self.llm.generation_config
+        self.sampling_params = SamplingParams(
+            temperature=0.0,
+            max_tokens=512
+        )
         
         self.prompter = PromptAgent(prompt_type, True)
 
@@ -153,29 +149,13 @@ class OpenSource:
         
         prompt_text = self.prompter.get_prompt(query) 
 
-        # Explicitly create the attention mask to handle the warning
-        # Use the modelscope chat method with attention mask handling
-        try:
-            # First try the existing method which might work despite the warning
-            answer, _ = self.llm.chat(self.tokenizer, prompt_text, history=None)
-        except Exception as e:
-            print(f"Standard chat method failed with: {e}. Using fallback method with explicit attention mask.")
-            # Fallback to manual generation with explicit attention mask
-            inputs = self.tokenizer(prompt_text, return_tensors="pt").to(self.llm.device)
-            # Generate with explicit attention mask
-            with torch.no_grad():
-                outputs = self.llm.generate(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs.get("attention_mask", None),
-                    max_new_tokens=512,
-                    temperature=0.0
-                )
-            # Decode the output skipping the input tokens
-            answer = self.tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
-        
+        outputs = self.llm.generate(prompt_text, self.sampling_params)
+        answer = outputs[0].outputs[0].text
         print("model returned")
+        
         code = clean_up_llm_output_func(answer)
         return code
+    
  
 class QwenModel:
     def __init__(self, prompt_type="base", model_name="Qwen/Qwen2.5-72B-Instruct-GPTQ-Int4"):
@@ -186,6 +166,7 @@ class QwenModel:
             device=self.device,
             quantization="gptq"
         )
+        
         self.sampling_params = SamplingParams(
             temperature=0.0,
             max_tokens=512

@@ -45,6 +45,7 @@ def main(args):
 
     benchmark_config = {
         'llm_model_type': args.llm_model_type,
+        'model_name': args.model_name, 
         'model_path': args.model_path,
         'prompt_type': args.prompt_type,
         'num_queries': args.num_queries,
@@ -86,7 +87,8 @@ def main(args):
 
     # Load the evaluator
     evaluator = BenchmarkEvaluator(graph_data=query_generator.malt_real_graph, llm_model_type=benchmark_config['llm_model_type'], 
-                                   prompt_type=benchmark_config['prompt_type'], model_path=benchmark_config['model_path'])
+                                   prompt_type=benchmark_config['prompt_type'], model_path=benchmark_config['model_path'], 
+                                   model_name=benchmark_config['model_name'])
 
     # the format is {"messages": [{"question": "XXX."}, {"answer": "YYY"}]}
     benchmark_data = []
